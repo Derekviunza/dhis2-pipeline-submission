@@ -1,0 +1,11 @@
+.venv/
+.venv2/
+.venv_wsl/
+__pycache__/
+*.pyc
+.DS_Store
+logs/
+output/
+data/
+tmp/
+bin/

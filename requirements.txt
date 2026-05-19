@@ -1,0 +1,5 @@
+pyspark==3.5.0
+faker==24.11.0
+numpy
+pytest==8.1.1
+pyyaml==6.0.1
