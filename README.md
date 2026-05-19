@@ -68,14 +68,14 @@ dim_period ---- fact_service_delivery ---- dim_org_unit
 
 ### Fact Table
 
-fact_service_delivery contains one row per data element, facility, period, and category option combo after deduplication.
+fact_service_delivery contains one row per data element, facility, period, and category option combo after deduplication. Partitioned by health_area and year_month for efficient querying.
 
 ### Dimensions
 
-- dim_data_element
-- dim_org_unit
-- dim_period
-- dim_program
+- dim_data_element: Unique data elements with metadata (value type, aggregation type, health area)
+- dim_org_unit: Organizational units with hierarchy (facility, district, region, country)
+- dim_period: Time dimensions (period, year, month, quarter, start/end dates)
+- dim_program: Programs with expected data elements per country and health area
 
 ## Data Quality Handling
 
@@ -114,12 +114,16 @@ The pipeline explicitly handles:
 
 ## Output Folders
 
-- output/warehouse/
-- output/analytics/
-- output/cross_country/
-- output/dq/
-- output/quarantine/
-- output/logs/
+The pipeline generates the following outputs:
+
+- output/warehouse/ - Parquet fact and dimension tables
+- output/analytics/ - CSV analytics outputs (MoM change, rolling averages, reporting rates, underreporting facilities)
+- output/cross_country/ - CSV cross-country aggregations (volumes, completeness, coverage matrix, low completeness flags)
+- output/dq/ - Parquet data quality outputs (late reported, missing values, explicit zeros, unresolved UIDs)
+- output/quarantine/ - Parquet quarantined malformed records
+- output/logs/ - Pipeline execution logs
+
+**To reproduce outputs:** Run the pipeline after generating data as shown above. The outputs are not committed to the repository to keep the repository size manageable.
 
 ## Approximate Time Spent
 
