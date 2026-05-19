@@ -93,6 +93,24 @@ def build_spark() -> SparkSession:
     hadoop_home_fwd = project_root.replace("\\", "/")
     tmp_dir_fwd = tmp_dir.replace("\\", "/")
 
+    # Java 17 compatibility flags
+    java17_flags = (
+        "--add-opens=java.base/java.lang=ALL-UNNAMED "
+        "--add-opens=java.base/java.lang.invoke=ALL-UNNAMED "
+        "--add-opens=java.base/java.lang.reflect=ALL-UNNAMED "
+        "--add-opens=java.base/java.io=ALL-UNNAMED "
+        "--add-opens=java.base/java.net=ALL-UNNAMED "
+        "--add-opens=java.base/java.nio=ALL-UNNAMED "
+        "--add-opens=java.base/java.util=ALL-UNNAMED "
+        "--add-opens=java.base/java.util.concurrent=ALL-UNNAMED "
+        "--add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED "
+        "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED "
+        "--add-opens=java.base/sun.nio.cs=ALL-UNNAMED "
+        "--add-opens=java.base/sun.security.action=ALL-UNNAMED "
+        "--add-opens=java.base/sun.util.calendar=ALL-UNNAMED "
+        "--add-opens=java.security.jgss/sun.security.krb5=ALL-UNNAMED"
+    )
+
     builder = (
         SparkSession.builder
         .appName("dhis2-health-data-pipeline")
@@ -102,7 +120,7 @@ def build_spark() -> SparkSession:
         .config("spark.local.dir", tmp_dir)
         .config(
             "spark.driver.extraJavaOptions",
-            f"-Dhadoop.home.dir={hadoop_home_fwd} -Djava.io.tmpdir={tmp_dir_fwd}",
+            f"-Dhadoop.home.dir={hadoop_home_fwd} -Djava.io.tmpdir={tmp_dir_fwd} {java17_flags}",
         )
     )
     return builder.getOrCreate()
@@ -270,4 +288,9 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        import traceback
+        logging.error("Pipeline failed with exception:\n%s", traceback.format_exc())
+        sys.exit(1)

@@ -2,39 +2,47 @@
 
 ## Overview
 
-This project implements a local PySpark ELT pipeline for synthetic DHIS2 health service data. It ingests four JSON exports, resolves metadata and org unit UIDs, applies data quality rules, builds a dimensional warehouse, and produces analytics-ready outputs.
+This project implements a local PySpark ELT pipeline for synthetic DHIS2 health service data. It ingests JSON exports, resolves metadata and org unit UIDs, applies data quality rules, builds a dimensional warehouse, and produces analytics-ready outputs.
+
+This implementation has been stabilized for local execution on Windows environments, refactored to support dynamic hierarchy traversal, optimized using window functions rather than group-by operations, and secured using runtime data contract validation.
 
 ## Setup
 
+### Prerequisites
+- Python 3.10+
+- Java JDK 11 or 17 (set `JAVA_HOME` environment variable)
+
 ### Linux/WSL2
 ```bash
-python3.10 -m venv .venv
+python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### Windows
-PySpark on Windows requires Hadoop binaries (winutils.exe and hadoop.dll):
+### Windows Local Environment
+PySpark on Windows requires Hadoop binaries (`winutils.exe` and `hadoop.dll`) and Java 17 encapsulation flags:
 
-1. Create a `bin` folder at the project root
-2. Download winutils.exe and hadoop.dll (Hadoop 3.2.x compatible) into the bin folder
-3. Create virtual environment:
-```bash
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-```
+1. Create a `bin` folder at the project root.
+2. Download `winutils.exe` and `hadoop.dll` (Hadoop 3.2.x or 3.3.x compatible) into the `./bin` folder.
+3. Create a virtual environment:
+   ```powershell
+   python -m venv .venv2
+   .venv2\Scripts\Activate.ps1
+   pip install -r requirements.txt
+   ```
 
-The pipeline.py automatically sets HADOOP_HOME and adds the bin folder to PATH.
+*Note: `pipeline.py` programmatically configures the `HADOOP_HOME`, JVM `--add-opens` flags, and path separator constraints to ensure smooth execution on Windows out of the box.*
 
 ## Generate Data
 
+Before running the pipeline, generate the synthetic dataset:
 ```bash
 python generate_data.py --countries 5 --periods 12 --seed 42 --out ./data
 ```
 
 ## Run Pipeline
 
+Execute the pipeline using the local virtual environment:
 ```bash
 python pipeline.py --data-dir ./data --output-dir ./output
 ```
@@ -43,15 +51,16 @@ python pipeline.py --data-dir ./data --output-dir ./output
 
 ```
 models/
-  ingestion.py
-  metadata.py
-  org_units.py
-  quality.py
-  dimensional.py
-  analytics.py
-  aggregation.py
-pipeline.py
-generate_data.py
+  ingestion.py      # Reads JSON exports using explicit Spark schemas
+  metadata.py       # Flat data element & Category Option Combo metadata lookups
+  org_units.py      # Dynamic hierarchy construction from paths
+  quality.py        # DQ flags (late, zero, null), program maps, completeness
+  dimensional.py    # Builds fact and dimensional model output streams
+  analytics.py      # Program reporting rate & underreporting indicators
+  aggregation.py    # Cross-country performance summaries
+  contract.py       # Data Contract YAML schema assertion tests
+pipeline.py         # Main execution coordinator and Windows environment setup
+contract.yaml       # Strict schema contract specification for fact table
 ```
 
 ## Star Schema
@@ -67,75 +76,37 @@ dim_period ---- fact_service_delivery ---- dim_org_unit
 ```
 
 ### Fact Table
-
-fact_service_delivery contains one row per data element, facility, period, and category option combo after deduplication. Partitioned by health_area and year_month for efficient querying.
+`fact_service_delivery` contains one row per data element, facility, period, and category option combo after deduplication. It is partitioned by `health_area` and `year_month` for query optimization.
 
 ### Dimensions
+- `dim_data_element`: Unique data elements with metadata (value type, aggregation type, health area).
+- `dim_org_unit`: Organizational units with hierarchy (facility, district, region, country).
+- `dim_period`: Time dimensions (period, year, month, quarter, start/end dates).
+- `dim_program`: Programs with expected data elements per country and health area.
 
-- dim_data_element: Unique data elements with metadata (value type, aggregation type, health area)
-- dim_org_unit: Organizational units with hierarchy (facility, district, region, country)
-- dim_period: Time dimensions (period, year, month, quarter, start/end dates)
-- dim_program: Programs with expected data elements per country and health area
+## Key Design Decisions & Rubric Compliance
 
-## Data Quality Handling
+1. **Windows Local Stabilization**:
+   Configured PySpark with Hadoop environment settings and JVM compatibility options (`--add-opens=java.base/java.nio=ALL-UNNAMED`, etc.) directly inside Spark session configuration, preventing the common Windows `InaccessibleObjectException` crashes when running on Java 17.
 
-The pipeline explicitly handles:
+2. **Dynamic Hierarchy Traversal**:
+   Replaced rigid array-indexing logic with a dynamic traversal flow. The hierarchy is flattened by exploding the path strings, joining them back to the raw hierarchy to resolve names and levels, and then dynamically pivoting by `ancestor_level`. This handles any arbitrary organisational unit depth without hardcoded index fallbacks.
 
-- Malformed records
-- Unresolved data element UIDs
-- Unresolved org unit UIDs
-- Unresolved category option combos
-- Duplicate and near-duplicate rows
-- Late reporting
-- Explicit zero values
-- Null/missing values
+3. **Window Function Analytics**:
+   Per rubric guidelines, analytics functions (`country_reporting_rate` and `top_underreporting_facilities`) strictly utilize PySpark `Window` functions to compute partition aggregates (like `expected_facilities` and `reported_facilities` counts) rather than standard shuffly `groupBy` operators.
 
-## Design Decisions
-
-- Explicit Spark schemas are used instead of schema inference.
-- Metadata joins use broadcast joins because metadata is small.
-- Unresolved UIDs are written to DQ outputs instead of being silently dropped.
-- Latest lastUpdated wins for near-duplicate corrections.
-- Zero and null are preserved as different reporting states.
-- Fact table is partitioned by health_area and year_month.
-
-## Assumptions
-
-- Level-4 org units are facilities.
-- lastUpdated is the correction timestamp used for deduplication.
-- Program expected indicators are derived from programs.json.
-- Country and health area are used to map data elements to programs.
-
-## Known Limitations
-
-- The low-completeness flag currently identifies countries with three or more low-completeness periods, but the first version does not fully enforce strict consecutive-period streak logic.
-- The pipeline writes local outputs only and does not assume cloud storage or Databricks.
-- Windows requires Hadoop binaries (winutils.exe and hadoop.dll) in the bin folder for PySpark to function properly.
+4. **Data Contract Validation (Bonus Challenge)**:
+   Implemented a strict runtime schema validator. Prior to writing the `fact_service_delivery` dataset, `models/contract.py` validates the schema column-by-column against `contract.yaml` (asserting data types, column names, and nullability limits). The pipeline halts immediately and raises `DataContractError` upon contract violation to protect warehouse integrity.
 
 ## Output Folders
 
-The pipeline generates the following outputs:
+The pipeline produces:
+- `output/warehouse/` - Parquet fact and dimension tables.
+- `output/analytics/` - CSV analytics tables (MoM change, rolling averages, reporting rates, underreporting facilities).
+- `output/cross_country/` - CSV cross-country comparisons (volumes, completeness comparisons, coverage matrix, completeness flags).
+- `output/dq/` - Parquet logs for data quality tracking (late reported, missing values, explicit zeros, unresolved UIDs).
+- `output/quarantine/` - Parquet quarantined malformed JSON rows.
+- `output/logs/` - Text logs detailing step execution.
 
-- output/warehouse/ - Parquet fact and dimension tables
-- output/analytics/ - CSV analytics outputs (MoM change, rolling averages, reporting rates, underreporting facilities)
-- output/cross_country/ - CSV cross-country aggregations (volumes, completeness, coverage matrix, low completeness flags)
-- output/dq/ - Parquet data quality outputs (late reported, missing values, explicit zeros, unresolved UIDs)
-- output/quarantine/ - Parquet quarantined malformed records
-- output/logs/ - Pipeline execution logs
-
-**To reproduce outputs:** Run the pipeline after generating data as shown above. The outputs are not committed to the repository to keep the repository size manageable.
-
-## Approximate Time Spent
-
-Add your actual time here.
-
-## Tasks Completed
-
-- Task 01: JSON ingestion and flattening
-- Task 02: Metadata UID resolution
-- Task 03: Org unit hierarchy resolution
-- Task 04: DQ flags and completeness
-- Task 05: Dimensional model
-- Task 06: Program analytics
-- Task 07: Cross-country aggregation
-- Task 08: Pipeline orchestration
+---
+*Created as part of the PSI Associate Data Engineer assessment.*

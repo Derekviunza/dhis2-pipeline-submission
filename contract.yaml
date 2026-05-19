@@ -1,0 +1,89 @@
+schema:
+  columns:
+    - name: data_element_uid
+      type: string
+      nullable: false
+    - name: data_element_name
+      type: string
+      nullable: true
+    - name: category_option_combo_uid
+      type: string
+      nullable: true
+    - name: category_option_combo_name
+      type: string
+      nullable: true
+    - name: program_uid
+      type: string
+      nullable: true
+    - name: program_name
+      type: string
+      nullable: true
+    - name: health_area
+      type: string
+      nullable: true
+    - name: org_unit_uid
+      type: string
+      nullable: false
+    - name: facility_name
+      type: string
+      nullable: true
+    - name: district_name
+      type: string
+      nullable: true
+    - name: region_name
+      type: string
+      nullable: true
+    - name: country_name
+      type: string
+      nullable: true
+    - name: period
+      type: string
+      nullable: false
+    - name: year_month
+      type: string
+      nullable: false
+    - name: year
+      type: integer
+      nullable: true
+    - name: month
+      type: integer
+      nullable: true
+    - name: quarter
+      type: string
+      nullable: true
+    - name: raw_value
+      type: string
+      nullable: true
+    - name: numeric_value
+      type: double
+      nullable: true
+    - name: boolean_value
+      type: boolean
+      nullable: true
+    - name: stored_by
+      type: string
+      nullable: true
+    - name: created_at
+      type: timestamp
+      nullable: true
+    - name: last_updated_at
+      type: timestamp
+      nullable: true
+    - name: is_explicit_zero
+      type: boolean
+      nullable: true
+    - name: is_missing_value
+      type: boolean
+      nullable: true
+    - name: is_late_reported
+      type: boolean
+      nullable: true
+    - name: reported_indicator_count
+      type: long
+      nullable: true
+    - name: expected_indicator_count
+      type: long
+      nullable: true
+    - name: completeness_score
+      type: double
+      nullable: true
