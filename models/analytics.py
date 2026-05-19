@@ -60,8 +60,6 @@ def country_reporting_rate(fact: DataFrame) -> DataFrame:
 
     return (
         fact
-        .select("country_name", "period")
-        .dropDuplicates()
         .withColumn("expected_facilities", expected_facilities)
         .withColumn("reported_facilities", reported_facilities)
         .withColumn(
@@ -69,6 +67,8 @@ def country_reporting_rate(fact: DataFrame) -> DataFrame:
             F.when(F.col("expected_facilities") > 0, F.col("reported_facilities") / F.col("expected_facilities"))
              .otherwise(F.lit(None).cast("double"))
         )
+        .select("country_name", "period", "expected_facilities", "reported_facilities", "reporting_rate")
+        .dropDuplicates()
     )
 
 
