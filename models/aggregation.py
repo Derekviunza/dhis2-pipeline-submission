@@ -64,6 +64,7 @@ def low_completeness_flags(completeness: DataFrame) -> DataFrame:
             F.avg("avg_completeness_score").alias("avg_streak_completeness"),
         )
         .filter(F.col("consecutive_low_periods") >= 3)
+        .drop("streak_group")
         .orderBy("country_name", "health_area", "streak_start_period")
     )
 
