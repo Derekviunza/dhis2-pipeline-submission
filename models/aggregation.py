@@ -38,20 +38,41 @@ def data_element_coverage_matrix(fact: DataFrame) -> DataFrame:
 
 
 def low_completeness_flags(completeness: DataFrame) -> DataFrame:
+    # Add month_index to track period order
     base = (
         completeness
         .withColumn("is_low", F.col("avg_completeness_score") < 0.80)
+        .withColumn("month_index", F.row_number().over(
+            Window.partitionBy("country_name", "health_area").orderBy("period")
+        ))
     )
 
-    return (
+    # Calculate streaks of consecutive low completeness periods
+    # A streak starts when is_low is True and the previous period was not low
+    w = Window.partitionBy("country_name", "health_area").orderBy("month_index")
+
+    streak_base = (
         base
-        .groupBy("country_name", "health_area")
-        .agg(
-            F.sum(F.col("is_low").cast("int")).alias("low_completeness_periods"),
-            F.avg("avg_completeness_score").alias("overall_avg_completeness"),
-        )
-        .filter(F.col("low_completeness_periods") >= 3)
+        .withColumn("prev_is_low", F.lag("is_low").over(w))
+        .withColumn("streak_start", F.when(~F.col("prev_is_low") | F.col("prev_is_low").isNull(), F.col("month_index")).otherwise(None))
+        .fillna(0, subset=["streak_start"])
     )
+
+    # Forward fill the streak_start to identify which streak each row belongs to
+    w_streak = Window.partitionBy("country_name", "health_area").orderBy("month_index").rowsBetween(Window.unboundedPreceding, 0)
+    streak_base = streak_base.withColumn("streak_id", F.last("streak_start", ignorenulls=True).over(w_streak))
+
+    # Count consecutive low completeness periods per streak
+    streak_counts = (
+        streak_base
+        .filter(F.col("is_low"))
+        .groupBy("country_name", "health_area", "streak_id")
+        .agg(F.count("*").alias("consecutive_low_periods"))
+        .filter(F.col("consecutive_low_periods") >= 3)
+        .select("country_name", "health_area")
+    )
+
+    return streak_counts
 
 
 def write_cross_country_outputs(
