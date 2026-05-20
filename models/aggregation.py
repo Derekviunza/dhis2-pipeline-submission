@@ -38,41 +38,34 @@ def data_element_coverage_matrix(fact: DataFrame) -> DataFrame:
 
 
 def low_completeness_flags(completeness: DataFrame) -> DataFrame:
-    # Add month_index to track period order
-    base = (
+    low = (
         completeness
-        .withColumn("is_low", F.col("avg_completeness_score") < 0.80)
-        .withColumn("month_index", F.row_number().over(
-            Window.partitionBy("country_name", "health_area").orderBy("period")
-        ))
+        .withColumn("year", F.substring("period", 1, 4).cast("int"))
+        .withColumn("month", F.substring("period", 5, 2).cast("int"))
+        .withColumn("month_index", F.col("year") * 12 + F.col("month"))
+        .filter(F.col("avg_completeness_score") < 0.80)
     )
 
-    # Calculate streaks of consecutive low completeness periods
-    # A streak starts when is_low is True and the previous period was not low
     w = Window.partitionBy("country_name", "health_area").orderBy("month_index")
 
-    streak_base = (
-        base
-        .withColumn("prev_is_low", F.lag("is_low").over(w))
-        .withColumn("streak_start", F.when(~F.col("prev_is_low") | F.col("prev_is_low").isNull(), F.col("month_index")).otherwise(None))
-        .fillna(0, subset=["streak_start"])
+    streaked = (
+        low
+        .withColumn("row_number", F.row_number().over(w))
+        .withColumn("streak_group", F.col("month_index") - F.col("row_number"))
     )
 
-    # Forward fill the streak_start to identify which streak each row belongs to
-    w_streak = Window.partitionBy("country_name", "health_area").orderBy("month_index").rowsBetween(Window.unboundedPreceding, 0)
-    streak_base = streak_base.withColumn("streak_id", F.last("streak_start", ignorenulls=True).over(w_streak))
-
-    # Count consecutive low completeness periods per streak
-    streak_counts = (
-        streak_base
-        .filter(F.col("is_low"))
-        .groupBy("country_name", "health_area", "streak_id")
-        .agg(F.count("*").alias("consecutive_low_periods"))
+    return (
+        streaked
+        .groupBy("country_name", "health_area", "streak_group")
+        .agg(
+            F.count("*").alias("consecutive_low_periods"),
+            F.min("period").alias("streak_start_period"),
+            F.max("period").alias("streak_end_period"),
+            F.avg("avg_completeness_score").alias("avg_streak_completeness"),
+        )
         .filter(F.col("consecutive_low_periods") >= 3)
-        .select("country_name", "health_area")
+        .orderBy("country_name", "health_area", "streak_start_period")
     )
-
-    return streak_counts
 
 
 def write_cross_country_outputs(

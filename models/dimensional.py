@@ -67,6 +67,7 @@ def write_dimensional_outputs(
     dim_program: DataFrame,
     output_dir: str,
 ) -> None:
+    fact = fact.withColumn("health_area", F.coalesce(F.col("health_area"), F.lit("Unknown")))
     fact.write.mode("overwrite").partitionBy("health_area", "year_month").parquet(
         f"{output_dir}/warehouse/fact_service_delivery"
     )

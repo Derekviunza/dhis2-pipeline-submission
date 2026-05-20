@@ -61,7 +61,7 @@ models/
   analytics.py      # Program reporting rate & underreporting indicators
   aggregation.py    # Cross-country performance summaries
   contract.py       # Data Contract YAML schema assertion tests
-pipeline.py         # Main execution coordinator and Windows environment setup
+pipeline.py         # Main execution coordinator
 contract.yaml       # Strict schema contract specification for fact table
 ```
 
@@ -88,16 +88,13 @@ dim_period ---- fact_service_delivery ---- dim_org_unit
 
 ## Key Design Decisions & Rubric Compliance
 
-1. **Windows Local Stabilization**:
-   Configured PySpark with Hadoop environment settings and JVM compatibility options (`--add-opens=java.base/java.nio=ALL-UNNAMED`, etc.) directly inside Spark session configuration, preventing the common Windows `InaccessibleObjectException` crashes when running on Java 17.
-
-2. **Dynamic Hierarchy Traversal**:
+1. **Dynamic Hierarchy Traversal**:
    Replaced rigid array-indexing logic with a dynamic traversal flow. The hierarchy is flattened by exploding the path strings, joining them back to the raw hierarchy to resolve names and levels, and then dynamically pivoting by `ancestor_level`. This handles any arbitrary organisational unit depth without hardcoded index fallbacks.
 
-3. **Window Function Analytics**:
-   Per rubric guidelines, analytics functions (`country_reporting_rate` and `top_underreporting_facilities`) strictly utilize PySpark `Window` functions to compute partition aggregates (like `expected_facilities` and `reported_facilities` counts) rather than standard shuffly `groupBy` operators.
+2. **Window Function Analytics**:
+   Per rubric guidelines, analytics functions (`top_underreporting_facilities`) utilize PySpark `Window` functions to compute partition aggregates. `country_reporting_rate` uses groupBy + join for facility counting.
 
-4. **Data Contract Validation (Bonus Challenge)**:
+3. **Data Contract Validation (Bonus Challenge)**:
    Implemented a strict runtime schema validator. Prior to writing the `fact_service_delivery` dataset, `models/contract.py` validates the schema column-by-column against `contract.yaml` (asserting data types, column names, and nullability limits). The pipeline halts immediately and raises `DataContractError` upon contract violation to protect warehouse integrity.
 
 ## Output Folders

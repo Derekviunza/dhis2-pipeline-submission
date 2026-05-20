@@ -56,6 +56,7 @@ from models.aggregation import (
     low_completeness_flags,
     write_cross_country_outputs,
 )
+from models.contract import validate_contract, DataContractError
 
 
 def parse_args():
@@ -183,6 +184,14 @@ def main():
         if fact_count == 0:
             logging.error("Critical DQ failure: fact table has zero rows")
             sys.exit(3)
+
+        try:
+            contract_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "contract.yaml")
+            validate_contract(fact, contract_path)
+            logging.info("Data contract validation passed")
+        except DataContractError as e:
+            logging.error("Critical DQ failure: data contract violated: %s", e)
+            sys.exit(4)
 
         write_dimensional_outputs(
             fact,

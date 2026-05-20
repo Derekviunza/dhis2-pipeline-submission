@@ -44,31 +44,18 @@ def rolling_three_month_average(fact: DataFrame) -> DataFrame:
 
 
 def country_reporting_rate(fact: DataFrame) -> DataFrame:
-    w_country = Window.partitionBy("country_name")
-    w_country_period = Window.partitionBy("country_name", "period")
-
-    # To calculate distinct facilities using Window without groupBy, we can collect them into a set and get the size.
-    # Since we only want expected facilities (any facility in the fact table for that country):
-    expected_facilities = F.size(F.collect_set("org_unit_uid").over(w_country))
-    
-    # Reported facilities (has a non-null value)
-    reported_facilities = F.size(
-        F.collect_set(
-            F.when(F.col("raw_value").isNotNull(), F.col("org_unit_uid"))
-        ).over(w_country_period)
-    )
+    expected = fact.groupBy("country_name").agg(F.countDistinct("org_unit_uid").alias("expected_facilities"))
+    reported = fact.filter(F.col("raw_value").isNotNull()).groupBy("country_name", "period") \
+        .agg(F.countDistinct("org_unit_uid").alias("reported_facilities"))
 
     return (
-        fact
-        .withColumn("expected_facilities", expected_facilities)
-        .withColumn("reported_facilities", reported_facilities)
+        reported.join(expected, "country_name")
         .withColumn(
             "reporting_rate",
             F.when(F.col("expected_facilities") > 0, F.col("reported_facilities") / F.col("expected_facilities"))
              .otherwise(F.lit(None).cast("double"))
         )
         .select("country_name", "period", "expected_facilities", "reported_facilities", "reporting_rate")
-        .dropDuplicates()
     )
 
 
