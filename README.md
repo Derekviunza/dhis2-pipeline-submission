@@ -10,30 +10,17 @@ This project implements a local PySpark ELT pipeline for synthetic DHIS2 health 
 - Python 3.10+
 - Java JDK 11 or 17 (set `JAVA_HOME` environment variable)
 
-### Linux/WSL2 (Recommended)
+### Linux/WSL2 (Required for Assessment)
+The assessment expects the pipeline to run on Linux/Unix systems. Use WSL2 or a Linux environment.
+
 ```bash
 python3.10 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### Windows
-PySpark on Windows requires additional setup. For assessment submission, use WSL2 or a Linux environment as the reviewers will run the pipeline on Linux/Unix systems.
-
-If you must run on Windows:
-1. Create a `bin` folder at the project root
-2. Download winutils.exe and hadoop.dll (Hadoop 3.2.x compatible) into the bin folder
-3. Set environment variables:
-```bash
-set HADOOP_HOME=C:\path\to\project\root
-set PATH=%HADOOP_HOME%\bin;%PATH%
-```
-4. Create virtual environment:
-```bash
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-```
+### Windows (Not Recommended for Assessment)
+PySpark on Windows has known Hadoop file system compatibility issues. For assessment submission, use WSL2 or a Linux environment as reviewers will run the pipeline on Linux/Unix systems.
 
 ## Generate Data
 
