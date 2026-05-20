@@ -3,24 +3,6 @@ import logging
 import os
 import sys
 
-# Set environment variables for Windows PySpark before importing
-if os.name == 'nt':
-    import importlib.util
-
-    project_root = os.path.abspath(os.path.dirname(__file__))
-    os.environ.setdefault('HADOOP_HOME', project_root)
-
-    # Locate PySpark inside whichever Python is running this script
-    pyspark_spec = importlib.util.find_spec("pyspark")
-    if pyspark_spec:
-        spark_home = os.path.dirname(pyspark_spec.origin)
-        os.environ['SPARK_HOME'] = spark_home
-        print(f"Set SPARK_HOME to: {spark_home}")
-
-    # Add HADOOP_HOME/bin to PATH so hadoop.dll can be loaded
-    hadoop_bin = os.path.join(project_root, 'bin')
-    os.environ['PATH'] = hadoop_bin + os.pathsep + os.environ.get('PATH', '')
-
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 
@@ -74,7 +56,6 @@ from models.aggregation import (
     low_completeness_flags,
     write_cross_country_outputs,
 )
-from models.contract import validate_contract, DataContractError
 
 
 def parse_args():
@@ -85,45 +66,13 @@ def parse_args():
 
 
 def build_spark() -> SparkSession:
-    project_root = os.path.abspath(os.path.dirname(__file__))
-    tmp_dir = os.path.join(project_root, "tmp")
-    os.makedirs(tmp_dir, exist_ok=True)
-
-    # JVM -D flags require forward slashes on Windows (backslashes are escape chars)
-    hadoop_home_fwd = project_root.replace("\\", "/")
-    tmp_dir_fwd = tmp_dir.replace("\\", "/")
-
-    # Java 17 compatibility flags
-    java17_flags = (
-        "--add-opens=java.base/java.lang=ALL-UNNAMED "
-        "--add-opens=java.base/java.lang.invoke=ALL-UNNAMED "
-        "--add-opens=java.base/java.lang.reflect=ALL-UNNAMED "
-        "--add-opens=java.base/java.io=ALL-UNNAMED "
-        "--add-opens=java.base/java.net=ALL-UNNAMED "
-        "--add-opens=java.base/java.nio=ALL-UNNAMED "
-        "--add-opens=java.base/java.util=ALL-UNNAMED "
-        "--add-opens=java.base/java.util.concurrent=ALL-UNNAMED "
-        "--add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED "
-        "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED "
-        "--add-opens=java.base/sun.nio.cs=ALL-UNNAMED "
-        "--add-opens=java.base/sun.security.action=ALL-UNNAMED "
-        "--add-opens=java.base/sun.util.calendar=ALL-UNNAMED "
-        "--add-opens=java.security.jgss/sun.security.krb5=ALL-UNNAMED"
-    )
-
-    builder = (
+    return (
         SparkSession.builder
         .appName("dhis2-health-data-pipeline")
         .master("local[*]")
         .config("spark.sql.shuffle.partitions", "8")
-        .config("spark.driver.memory", "2g")
-        .config("spark.local.dir", tmp_dir)
-        .config(
-            "spark.driver.extraJavaOptions",
-            f"-Dhadoop.home.dir={hadoop_home_fwd} -Djava.io.tmpdir={tmp_dir_fwd} {java17_flags}",
-        )
+        .getOrCreate()
     )
-    return builder.getOrCreate()
 
 
 def setup_logging(output_dir: str) -> None:
@@ -164,7 +113,7 @@ def main():
 
         total_rows = log_count("flattened_data_values", data_values_flat)
         malformed_rows = log_count("malformed_data_values", malformed)
-        valid_rows = log_count("valid_data_values", data_values_valid)
+        log_count("valid_data_values", data_values_valid)
 
         quarantine_rate = malformed_rows / total_rows if total_rows else 1
         if quarantine_rate > 0.10:
@@ -234,15 +183,6 @@ def main():
         if fact_count == 0:
             logging.error("Critical DQ failure: fact table has zero rows")
             sys.exit(3)
-
-        logging.info("Task 05 (Bonus): Validating Data Contract")
-        try:
-            contract_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "contract.yaml")
-            validate_contract(fact, contract_path)
-            logging.info("Data contract validation passed")
-        except DataContractError as e:
-            logging.error(f"Critical DQ failure: Data Contract violated: {e}")
-            sys.exit(4)
 
         write_dimensional_outputs(
             fact,

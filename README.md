@@ -4,34 +4,36 @@
 
 This project implements a local PySpark ELT pipeline for synthetic DHIS2 health service data. It ingests JSON exports, resolves metadata and org unit UIDs, applies data quality rules, builds a dimensional warehouse, and produces analytics-ready outputs.
 
-This implementation has been stabilized for local execution on Windows environments, refactored to support dynamic hierarchy traversal, optimized using window functions rather than group-by operations, and secured using runtime data contract validation.
-
 ## Setup
 
 ### Prerequisites
 - Python 3.10+
 - Java JDK 11 or 17 (set `JAVA_HOME` environment variable)
 
-### Linux/WSL2
+### Linux/WSL2 (Recommended)
 ```bash
-python -m venv .venv
+python3.10 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### Windows Local Environment
-PySpark on Windows requires Hadoop binaries (`winutils.exe` and `hadoop.dll`) and Java 17 encapsulation flags:
+### Windows
+PySpark on Windows requires additional setup. For assessment submission, use WSL2 or a Linux environment as the reviewers will run the pipeline on Linux/Unix systems.
 
-1. Create a `bin` folder at the project root.
-2. Download `winutils.exe` and `hadoop.dll` (Hadoop 3.2.x or 3.3.x compatible) into the `./bin` folder.
-3. Create a virtual environment:
-   ```powershell
-   python -m venv .venv2
-   .venv2\Scripts\Activate.ps1
-   pip install -r requirements.txt
-   ```
-
-*Note: `pipeline.py` programmatically configures the `HADOOP_HOME`, JVM `--add-opens` flags, and path separator constraints to ensure smooth execution on Windows out of the box.*
+If you must run on Windows:
+1. Create a `bin` folder at the project root
+2. Download winutils.exe and hadoop.dll (Hadoop 3.2.x compatible) into the bin folder
+3. Set environment variables:
+```bash
+set HADOOP_HOME=C:\path\to\project\root
+set PATH=%HADOOP_HOME%\bin;%PATH%
+```
+4. Create virtual environment:
+```bash
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
 
 ## Generate Data
 
