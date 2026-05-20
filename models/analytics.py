@@ -92,14 +92,61 @@ def top_underreporting_facilities(fact: DataFrame) -> DataFrame:
     )
 
 
+def detect_anomalies(fact: DataFrame) -> DataFrame:
+    """
+    Flags facilities where any indicator value is more than 3 standard deviations
+    from that facility's own 12-month rolling mean.
+    """
+    w_12m = (
+        Window
+        .partitionBy("org_unit_uid", "data_element_uid", "category_option_combo_uid")
+        .orderBy("year_month")
+        .rowsBetween(-11, 0)
+    )
+
+    df_stats = (
+        fact
+        .withColumn("rolling_mean", F.avg("numeric_value").over(w_12m))
+        .withColumn("rolling_stddev", F.stddev("numeric_value").over(w_12m))
+    )
+
+    anomalies = (
+        df_stats
+        .filter(
+            F.col("rolling_stddev").isNotNull()
+            & (F.col("rolling_stddev") > 0)
+            & (F.abs(F.col("numeric_value") - F.col("rolling_mean")) > 3 * F.col("rolling_stddev"))
+        )
+        .withColumn("z_score", (F.col("numeric_value") - F.col("rolling_mean")) / F.col("rolling_stddev"))
+        .select(
+            "country_name",
+            "region_name",
+            "district_name",
+            "facility_name",
+            "org_unit_uid",
+            "data_element_name",
+            "data_element_uid",
+            "category_option_combo_name",
+            "period",
+            "numeric_value",
+            "rolling_mean",
+            "rolling_stddev",
+            "z_score"
+        )
+    )
+    return anomalies
+
+
 def write_analytics_outputs(
     mom: DataFrame,
     rolling: DataFrame,
     reporting_rate: DataFrame,
     underreporting: DataFrame,
+    anomalies: DataFrame,
     output_dir: str,
 ) -> None:
     mom.write.mode("overwrite").csv(f"{output_dir}/analytics/month_over_month_change", header=True)
     rolling.write.mode("overwrite").csv(f"{output_dir}/analytics/rolling_3_month_average", header=True)
     reporting_rate.write.mode("overwrite").csv(f"{output_dir}/analytics/country_reporting_rate", header=True)
     underreporting.write.mode("overwrite").csv(f"{output_dir}/analytics/top_underreporting_facilities", header=True)
+    anomalies.write.mode("overwrite").csv(f"{output_dir}/analytics/anomalies", header=True)

@@ -47,6 +47,7 @@ from models.analytics import (
     rolling_three_month_average,
     country_reporting_rate,
     top_underreporting_facilities,
+    detect_anomalies,
     write_analytics_outputs,
 )
 from models.aggregation import (
@@ -63,6 +64,8 @@ def parse_args():
     parser = argparse.ArgumentParser(description="DHIS2 Health Data Pipeline")
     parser.add_argument("--data-dir", required=True)
     parser.add_argument("--output-dir", required=True)
+    parser.add_argument("--incremental", action="store_true", help="Only process periods not already loaded")
+    parser.add_argument("--reference-metadata", help="Path to reference metadata JSON for drift detection")
     return parser.parse_args()
 
 
@@ -107,6 +110,28 @@ def main():
         raw = load_raw_files(spark, args.data_dir)
 
         data_values_flat = flatten_data_values(raw["data_values_raw"])
+
+        # Bonus B2: Incremental load logic
+        loaded_periods = []
+        fact_path = f"{args.output_dir}/warehouse/fact_service_delivery"
+        if args.incremental and os.path.exists(fact_path):
+            try:
+                existing_df = spark.read.parquet(fact_path)
+                loaded_periods = [
+                    row["year_month"] for row in existing_df.select("year_month").distinct().collect()
+                    if row["year_month"]
+                ]
+                logging.info(f"Incremental load: Detected already loaded periods: {loaded_periods}")
+            except Exception as e:
+                logging.warning(f"Could not read existing fact table for incremental: {e}. Processing all periods.")
+
+        if args.incremental and loaded_periods:
+            data_values_flat = data_values_flat.filter(~F.col("period").isin(loaded_periods))
+            logging.info("Filtered out already loaded periods.")
+            if data_values_flat.count() == 0:
+                logging.info("All periods are already present in the output directory. Incremental load complete. No new data to process.")
+                return
+
         malformed = quarantine_malformed_data_values(data_values_flat)
         data_values_valid = valid_data_values(data_values_flat)
 
@@ -123,6 +148,17 @@ def main():
 
         logging.info("Task 02: Resolving metadata UIDs")
         data_elements, category_option_combos = flatten_metadata(raw["metadata_raw"])
+
+        # Bonus B4: Metadata drift detection
+        current_metadata_path = f"{args.data_dir}/metadata.json"
+        ref_metadata_path = args.reference_metadata or f"{args.output_dir}/warehouse/metadata_snapshot.json"
+        drift_report_path = f"{args.output_dir}/dq/metadata_drift_report.json"
+
+        if args.reference_metadata or os.path.exists(ref_metadata_path):
+            logging.info("Task 02 (Bonus): Checking for metadata drift")
+            os.makedirs(f"{args.output_dir}/dq", exist_ok=True)
+            from models.drift import detect_metadata_drift
+            detect_metadata_drift(current_metadata_path, ref_metadata_path, drift_report_path)
 
         bad_de = unresolved_data_elements(data_values_valid, data_elements)
         bad_coc = unresolved_category_option_combos(data_values_valid, category_option_combos)
@@ -208,11 +244,15 @@ def main():
         reporting_rate = country_reporting_rate(fact)
         underreporting = top_underreporting_facilities(fact)
 
+        logging.info("Task 06 (Bonus): Performing anomaly detection")
+        anomalies = detect_anomalies(fact)
+
         write_analytics_outputs(
             mom,
             rolling,
             reporting_rate,
             underreporting,
+            anomalies,
             args.output_dir,
         )
 
@@ -229,6 +269,15 @@ def main():
             low_flags,
             args.output_dir,
         )
+
+        # Save reference metadata snapshot for next runs (Bonus B4)
+        try:
+            os.makedirs(f"{args.output_dir}/warehouse", exist_ok=True)
+            import shutil
+            shutil.copyfile(current_metadata_path, f"{args.output_dir}/warehouse/metadata_snapshot.json")
+            logging.info(f"Saved current metadata snapshot to {args.output_dir}/warehouse/metadata_snapshot.json")
+        except Exception as e:
+            logging.error(f"Failed to save metadata snapshot: {e}")
 
         logging.info("Pipeline completed successfully")
 
